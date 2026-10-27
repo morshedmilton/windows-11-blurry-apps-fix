@@ -144,8 +144,15 @@ Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 3
 
 Write-Host 'Clearing icon cache (bitmaps rasterised at the old DPI)...' -ForegroundColor Yellow
-$exp = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Explorer'
-Get-ChildItem $exp -Filter 'iconcache*.db' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+# Do not rely on $env:LOCALAPPDATA - it can be empty in a non-interactive host.
+$localAppData = [Environment]::GetFolderPath('LocalApplicationData')
+$iconPath     = Join-Path $localAppData 'Microsoft\Windows\Explorer'
+if (Test-Path $iconPath) {
+    Get-ChildItem -Path $iconPath -Filter 'iconcache*.db' -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+} else {
+    Write-Host ('  skipped - ' + $iconPath + ' not found') -ForegroundColor DarkGray
+}
 
 Start-Sleep -Seconds 1
 if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) {
@@ -154,13 +161,13 @@ if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) {
 Start-Sleep -Seconds 4
 
 # ------------------------------------------------------------- verify state
-$tmp = Join-Path $env:TEMP ('_dpi_' + [guid]::NewGuid().ToString('N') + '.txt')
-$code = 'Add-Type -AssemblyName System.Windows.Forms;' +
-        '$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds;' +
-        'Set-Content -Path "' + $tmp + '" -Value ($b.Width.ToString()+"x"+$b.Height.ToString()) -Encoding ascii'
-Start-Process 'powershell.exe' -ArgumentList '-NoProfile','-Command',$code -Wait -WindowStyle Hidden
-$logical = Get-Content $tmp -ErrorAction SilentlyContinue
-Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+# A child process reads the value: this shell's DPI is already cached.
+$job = Start-Job -ScriptBlock {
+    Add-Type -AssemblyName System.Windows.Forms
+    $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    "$($b.Width)x$($b.Height)"
+}
+$logical = (Receive-Job $job -Wait -AutoRemoveJob | Select-Object -First 1)
 
 Write-Host ''
 Write-Host ('  logical desktop now: ' + $logical + '   (1920x1080 = 100 %, 1536x864 = 125 %)') -ForegroundColor Green

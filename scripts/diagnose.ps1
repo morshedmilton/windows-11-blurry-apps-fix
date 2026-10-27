@@ -106,15 +106,25 @@ $rows = @(
 )
 foreach ($r in $rows) {
     $bad = $false
-    if ($r.n -match 'LogPixels' -and $r.v -ne $sysDpi) { $bad = $true }
-    if ($r.n -match 'AppliedDPI' -and $r.v -ne $sysDpi) { $bad = $true }
+    # Only the HKCU values are actually consulted on a per-monitor DPI system.
+    # The two HKLM entries are profile defaults and are informational only.
+    if ($r.n -like 'HKCU*' -and $r.n -match 'LogPixels|AppliedDPI') {
+        if ($r.v -ne $sysDpi) { $bad = $true }
+    }
     if ($r.n -eq 'FontSmoothingGamma' -and $r.v -ne 1200 -and $r.v -ne 1000) { $bad = $true }
     $line = ('  {0,-38} {1,-8} expected {2}' -f $r.n, $r.v, $r.exp)
-    if ($bad) { Write-Host $line -ForegroundColor Red } else { Write-Host $line -ForegroundColor Gray }
+    if ($bad) {
+        Write-Host $line -ForegroundColor Red
+    } elseif ($r.n -like 'HKLM*') {
+        Write-Host $line -ForegroundColor DarkGray
+    } else {
+        Write-Host $line -ForegroundColor Gray
+    }
 }
 Write-Host ''
-Write-Host '  Red rows are out of range. LogPixels != scaling DPI, or FontSmoothingGamma = 0,' -ForegroundColor DarkGray
-Write-Host '  makes text look soft even in perfectly DPI-aware apps.' -ForegroundColor DarkGray
+Write-Host '  Red = out of range and actually used. Grey HKCU rows = fine.' -ForegroundColor DarkGray
+Write-Host '  The two HKLM rows are defaults for new profiles; Windows ignores them' -ForegroundColor DarkGray
+Write-Host '  once per-monitor DPI is active, so they are shown for reference only.' -ForegroundColor DarkGray
 
 # --------------------------------------------------------- per-app overrides
 Write-Section '5. PER-APP HIGH-DPI OVERRIDES ALREADY SET'
